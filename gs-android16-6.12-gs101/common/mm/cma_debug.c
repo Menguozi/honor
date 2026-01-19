@@ -123,8 +123,21 @@ static int cma_free_write(void *data, u64 val)
 {
 	int pages = val;
 	struct cma *cma = data;
+	unsigned long alloc_start;
+	u64 wait_us;
+	int ret;
 
-	return cma_free_mem(cma, pages);
+	alloc_start = jiffies;
+	ret = cma_free_mem(cma, pages);
+	wait_us = jiffies_to_usecs(jiffies - alloc_start);
+	if (ret)
+		pr_info("cma: failed to free %llu pages from CMA area %s\n",
+			(u64)pages, cma->name);
+	else
+		pr_info("cma: freed %llu pages from CMA area %s in %llu us\n",
+			(u64)pages, cma->name, wait_us);
+
+	return ret;
 }
 DEFINE_DEBUGFS_ATTRIBUTE(cma_free_fops, NULL, cma_free_write, "%llu\n");
 
@@ -155,8 +168,21 @@ static int cma_alloc_write(void *data, u64 val)
 {
 	int pages = val;
 	struct cma *cma = data;
+	unsigned long alloc_start;
+	u64 wait_us;
+	int ret;
 
-	return cma_alloc_mem(cma, pages);
+	alloc_start = jiffies;
+	ret = cma_alloc_mem(cma, pages);
+	wait_us = jiffies_to_usecs(jiffies - alloc_start);
+	if (ret)
+		pr_info("cma: failed to allocate %llu pages from CMA area %s\n",
+			(u64)pages, cma->name);
+	else
+		pr_info("cma: allocated %llu pages from CMA area %s in %llu us\n",
+			(u64)pages, cma->name, wait_us);
+
+	return ret;
 }
 DEFINE_DEBUGFS_ATTRIBUTE(cma_alloc_fops, NULL, cma_alloc_write, "%llu\n");
 
