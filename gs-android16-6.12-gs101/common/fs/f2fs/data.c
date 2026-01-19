@@ -3792,6 +3792,16 @@ static bool f2fs_dirty_data_folio(struct address_space *mapping,
 		struct folio *folio)
 {
 	struct inode *inode = mapping->host;
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	if (is_inode_flag_set(inode, FI_RAMFS)) {
+		/* For ramfs, mark as dirty only if not already dirty */
+		if (!folio_test_dirty(folio))
+			return true;
+		else
+			return false;
+	}
+#endif
 
 	trace_f2fs_set_page_dirty(folio, DATA);
 

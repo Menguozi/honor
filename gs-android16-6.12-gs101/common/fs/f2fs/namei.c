@@ -14,6 +14,10 @@
 #include <linux/dcache.h>
 #include <linux/namei.h>
 #include <linux/quotaops.h>
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+#include <linux/slab.h>
+#endif
 
 #include "f2fs.h"
 #include "node.h"
@@ -219,6 +223,67 @@ static void set_file_temperature(struct f2fs_sb_info *sbi, struct inode *inode,
 		file_set_hot(inode);
 }
 
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+static int is_cache_file(struct dentry *dentry)
+{
+	char *fname, *fullname;
+	const int pathlen = 512;
+	if (dentry) {
+		fname = kmalloc(pathlen, GFP_KERNEL);
+		if (!fname)
+			goto out;
+
+		fullname = dentry_path_raw(dentry, fname, pathlen);
+
+		if (fullname) {
+			printk(KERN_ALERT "[filemgr] fullname = %s\n",
+			       fullname);
+			if (strstr(fullname,
+				   "/data/com.zhiliaoapp.musically/cache") ||
+			    strstr(fullname,
+				   "/data/com.ss.android.ugc.aweme/cache")) {
+				kfree(fname);
+				return 1;
+			}
+		}
+		kfree(fname);
+	}
+out:
+	return 0;
+}
+
+// static int no_inline_file(struct dentry *dentry)
+// {
+// 	char *fname, *fullname;
+// 	const int pathlen = 512;
+// 	if (dentry) {
+// 		fname = kmalloc(pathlen, GFP_KERNEL);
+// 		if (!fname)
+// 			goto out;
+
+// 		fullname = dentry_path_raw(dentry, fname, pathlen); // 绝对路径
+
+// 		if (fullname) { // /data/com.facebook.katana/cache
+// 			//printk(KERN_ALERT "fullname = %s\n", fullname);
+// 			// if(strstr(fullname, ".exo")) { // 判断是否为缓存目录
+// 			if (strstr(fullname, ".exo") ||
+// 			    strstr(fullname, ".cnt") ||
+// 			    strstr(fullname, ".ttf") ||
+// 			    strstr(fullname, ".js") ||
+// 			    strstr(fullname, ".png") ||
+// 			    strstr(fullname, ".css")) { // 判断是否为缓存目录
+// 				kfree(fname);
+// 				return 1;
+// 			}
+// 		}
+// 		kfree(fname);
+// 	}
+// out:
+// 	return 0;
+// }
+#endif
+
 static struct inode *f2fs_new_inode(struct mnt_idmap *idmap,
 						struct inode *dir, umode_t mode,
 						const char *name)
@@ -373,6 +438,35 @@ static int f2fs_create(struct mnt_idmap *idmap, struct inode *dir,
 	inode = f2fs_new_inode(idmap, dir, mode, dentry->d_name.name);
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
+
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	if (is_cache_file(dentry) && (S_ISREG(inode->i_mode))) {
+		struct f2fs_inode_info *fi = F2FS_I(inode);
+		fi->ac_stat_stage1 = kmalloc(sizeof(unsigned long) * 20,
+					     GFP_KERNEL | __GFP_ZERO);
+		if (fi->ac_stat_stage1) {
+			if (!add_to_inode_list(
+				    inode, INIT_INODE_LIST)) { // return 0 if ok
+				//if(no_inline_file(dentry))
+				clear_inode_flag(inode, FI_INLINE_DATA);
+				set_inode_flag(inode, FI_RAMFS);
+				set_inode_ftype(
+					inode,
+					INODE_INIT); // 分类前设置为初始状态
+				mapping_set_unevictable(
+					inode->i_mapping); // 设置为unevitable
+				F2FS_I(inode)->create_time = get_cur_time();
+				ihold(inode); // increment a reference for filemgr
+				dget(dentry); // increment a reference for filemgr
+				printk(KERN_ALERT "[filemgr] create ef2fs dir,%s\n", dentry->d_name.name);
+			} else {
+				printk(KERN_ALERT "[filemgr] can not add to init list,%s\n", dentry->d_name.name);
+				kfree(fi->ac_stat_stage1);
+			}
+		}
+	}
+#endif
 
 	inode->i_op = &f2fs_file_inode_operations;
 	inode->i_fop = &f2fs_file_operations;
@@ -551,6 +645,70 @@ static int f2fs_unlink(struct inode *dir, struct dentry *dentry)
 	struct f2fs_dir_entry *de;
 	struct page *page;
 	int err;
+#define CONFIG_Menguozi_PRINT_F2FS_UNLINK
+#ifdef CONFIG_Menguozi_PRINT_F2FS_UNLINK
+	char *fname;
+	char *ss;
+	struct timespec64 now, atime_ts, mtime_ts, ctime_ts;
+	long long ttnow_us, atime_us, mtime_us, ctime_us;
+	kuid_t uid;
+
+	if (!dentry)
+		goto out_trace;
+
+	inode = d_inode(dentry);
+	if (!inode || !inode->i_sb || !inode->i_sb->s_type)
+		goto out_trace;
+
+	/* Only trace f2fs */
+	if (strcmp(inode->i_sb->s_type->name, "f2fs") != 0)
+		goto out_trace;
+
+	fname = __getname();
+	if (!fname)
+		goto out_trace;
+
+	ss = dentry_path_raw(dentry, fname, PATH_MAX);
+	if (IS_ERR_OR_NULL(ss))
+		goto out_putname;
+
+	/* Only log if path contains "/cache/" */
+	if (!strstr(ss, "/cache/"))
+		goto out_putname;
+
+	if (!current)
+		goto out_putname;
+
+	/* Get current UID safely */
+	uid = current_uid();
+
+	/* Get current time (microseconds) */
+	ktime_get_real_ts64(&now);
+	ttnow_us = now.tv_sec * 1000000LL + now.tv_nsec / 1000LL;
+
+	/* Safely get inode timestamps */
+	atime_ts = inode_get_atime(inode);
+	mtime_ts = inode_get_mtime(inode);
+	ctime_ts = inode_get_ctime(inode);
+
+	atime_us = atime_ts.tv_sec * 1000000LL + atime_ts.tv_nsec / 1000LL;
+	mtime_us = mtime_ts.tv_sec * 1000000LL + mtime_ts.tv_nsec / 1000LL;
+	ctime_us = ctime_ts.tv_sec * 1000000LL + ctime_ts.tv_nsec / 1000LL;
+
+	printk(KERN_ALERT
+	       "[filegmr-f2fs_unlink]-> %lld,unlink,f2fs,%s,%lld,%lld,%lld,%lld,%lu,%d,%s,%u\n",
+	       now.tv_sec * 1000LL + now.tv_nsec / 1000000LL, // ms timestamp
+	       ss,
+	       ttnow_us - atime_us, // us since last access
+	       ttnow_us - mtime_us, // us since last modify
+	       ttnow_us - ctime_us, // us since metadata change
+	       i_size_read(inode), inode->i_ino, current->pid, current->comm,
+	       from_kuid(&init_user_ns, uid)); // safe uid conversion
+
+out_putname:
+	__putname(fname);
+out_trace:
+#endif
 
 	trace_f2fs_unlink_enter(dir, dentry);
 
@@ -593,6 +751,11 @@ static int f2fs_unlink(struct inode *dir, struct dentry *dentry)
 	}
 	f2fs_delete_entry(de, page, dir, inode);
 	f2fs_unlock_op(sbi);
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	if (is_inode_flag_set(inode, FI_RAMFS))
+		set_inode_flag(inode, FI_RAMFS_DELETED);
+#endif
 
 	/* VFS negative dentries are incompatible with Encoding and
 	 * Case-insensitiveness. Eventually we'll want avoid

@@ -1492,6 +1492,11 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
 	init_f2fs_rwsem(&fi->i_gc_rwsem[WRITE]);
 	init_f2fs_rwsem(&fi->i_xattr_sem);
 
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	fi->create_time = get_cur_time();
+#endif
+
 	/* Will be used by directory only */
 	fi->i_dir_level = F2FS_SB(sb)->dir_level;
 
@@ -1611,6 +1616,12 @@ static void f2fs_dirty_inode(struct inode *inode, int flags)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	if (is_inode_flag_set(inode, FI_RAMFS))
+		return;
+#endif
+
 	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
 			inode->i_ino == F2FS_META_INO(sbi))
 		return;
@@ -1623,6 +1634,17 @@ static void f2fs_dirty_inode(struct inode *inode, int flags)
 
 static void f2fs_free_inode(struct inode *inode)
 {
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	struct f2fs_inode_info *fi;
+	fi = F2FS_I(inode);
+	if (fi->ac_stat_stage1) {
+		kfree(fi->ac_stat_stage1);
+	}
+	if (fi->ac_stat_stage2) {
+		kfree(fi->ac_stat_stage2);
+	}
+#endif
 	fscrypt_free_inode(inode);
 	kmem_cache_free(f2fs_inode_cachep, F2FS_I(inode));
 }
@@ -4790,6 +4812,10 @@ try_onemore:
 	sbi->last_valid_block_count = sbi->total_valid_block_count;
 	sbi->reserved_blocks = 0;
 	sbi->current_reserved_blocks = 0;
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	sbi->ramfs_used_block = 0;
+#endif
 	limit_reserve_root(sbi);
 	adjust_unusable_cap_perc(sbi);
 
@@ -4825,6 +4851,20 @@ try_onemore:
 			 err);
 		goto free_nm;
 	}
+
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	err = init_file_manager();
+	if (err) {
+		f2fs_err(sbi, "Failed to initialize F2FS file manager (%d)",
+			 err);
+		goto free_nm;
+	}
+	err = start_filemgr_thread(sbi);
+	if (err)
+		f2fs_err(sbi,"Background shrink thread has stopped (%d)\n",
+		       err);
+#endif
 
 	/* For write statistics */
 	sbi->sectors_written_start = f2fs_get_sectors_written(sbi);
@@ -5298,6 +5338,10 @@ static void __exit exit_f2fs_fs(void)
 	f2fs_destroy_checkpoint_caches();
 	f2fs_destroy_segment_manager_caches();
 	f2fs_destroy_node_manager_caches();
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	destroy_file_manager();
+#endif
 	destroy_inodecache();
 }
 

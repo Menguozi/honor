@@ -316,6 +316,10 @@ struct ino_entry {
 struct inode_entry {
 	struct list_head list;	/* list head */
 	struct inode *inode;	/* vfs inode pointer */
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	unsigned int ino;
+#endif
 };
 
 struct fsync_node_entry {
@@ -784,6 +788,25 @@ enum {
 #define file_dont_truncate(inode)	clear_file(inode, FADVISE_TRUNC_BIT)
 
 #define DEF_DIR_LEVEL		0
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+#define NR_AC_STAT 66
+#define NR_AC_TIME_STAGE_1 20
+#define NR_AC_TIME_STAGE_2 60
+
+enum {
+	INODE_INIT,
+	INODE_UNEVICTABLE,
+	INODE_WRITEBACK,
+	INODE_CLEAN,
+	INODE_STAGE1,
+};
+
+struct f2fs_filemgr_kthread {
+	struct task_struct *filemgr_task;
+	wait_queue_head_t filemgr_wait_queue_head;
+};
+#endif
 
 /* used for f2fs_inode_info->flags */
 enum {
@@ -826,6 +849,11 @@ enum {
 	FI_OPENED_FILE,		/* indicate file has been opened */
 	FI_DONATE_FINISHED,	/* indicate page donation of file has been finished */
 	FI_MAX,			/* max flag, never be used */
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	FI_RAMFS,
+	FI_RAMFS_DELETED,
+#endif
 };
 
 struct f2fs_inode_info {
@@ -897,6 +925,18 @@ struct f2fs_inode_info {
 
 	unsigned int atomic_write_cnt;
 	loff_t original_i_size;		/* original i_size before atomic write */
+
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	unsigned long *ac_stat_stage1;
+	unsigned long *ac_stat_stage2;
+	unsigned long ac_stat_tl[6];
+	//    unsigned int ac_stat[86];
+	unsigned int ftype;
+	unsigned char list_index;
+	unsigned long create_time;
+	unsigned long last_access_time;
+#endif
 };
 
 static inline void get_read_extent_info(struct extent_info *ext,
@@ -1684,6 +1724,12 @@ struct f2fs_sb_info {
 	struct f2fs_rwsem quota_sem;		/* blocking cp for flags */
 	struct task_struct *umount_lock_holder;	/* s_umount lock holder */
 
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	block_t ramfs_used_block;
+	struct f2fs_filemgr_kthread *filemgr_thread;
+#endif
+
 	/* # of pages, see count_type */
 	atomic_t nr_pages[NR_COUNT_TYPE];
 	/* # of allocated blocks */
@@ -2112,6 +2158,58 @@ static inline bool is_sbi_flag_set(struct f2fs_sb_info *sbi, unsigned int type)
 {
 	return test_bit(type, &sbi->s_flag);
 }
+
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+enum {
+	INIT_INODE_LIST = 0,
+	STAGE1_INODE_LIST,
+	ACTIVE_INODE_LIST,
+	INACTIVE_INODE_LIST,
+	NR_INODE_LIST,
+};
+
+struct filemgr_list {
+	spinlock_t list_lock;
+	spinlock_t fill_lock;
+
+	unsigned long active_used_bytes;
+	unsigned long high_watermark_bytes;
+	unsigned long low_watermark_bytes;
+	unsigned long fg_reclaim_watermark;
+
+	struct list_head ilist[NR_INODE_LIST];
+	unsigned int nr_ilist[NR_INODE_LIST];
+	struct xarray iroot;
+};
+
+static inline void set_inode_ftype(struct inode *inode, int ftype)
+{
+	F2FS_I(inode)->ftype = ftype;
+}
+
+static inline int is_inode_ftype(struct inode *inode, int ftype)
+{
+	return F2FS_I(inode)->ftype == ftype;
+}
+
+static inline long get_cur_time(void)
+{
+	return (long)ktime_get_real_seconds();
+}
+
+int init_file_manager(void);
+void destroy_file_manager(void);
+
+int add_to_inode_list(struct inode *inode, int list_idx);
+void prink_list_info(void);
+
+int start_filemgr_thread(struct f2fs_sb_info *sbi);
+void stop_filemgr_thread(struct f2fs_sb_info *sbi);
+
+int unlink_file_by_inode(struct inode *inode, int is_lock);
+ssize_t handle_unevictable_inode(struct inode *inode);
+#endif
 
 static inline void set_sbi_flag(struct f2fs_sb_info *sbi, unsigned int type)
 {

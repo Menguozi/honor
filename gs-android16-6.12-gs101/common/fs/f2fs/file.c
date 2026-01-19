@@ -287,6 +287,11 @@ static int f2fs_do_sync_file(struct file *file, loff_t start, loff_t end,
 		return 0;
 
 	trace_f2fs_sync_file_enter(inode);
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	if (is_inode_flag_set(inode, FI_RAMFS))
+		return 0;
+#endif
 
 	if (S_ISDIR(inode->i_mode))
 		goto go_write;
@@ -4838,6 +4843,43 @@ static ssize_t f2fs_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	const loff_t pos = iocb->ki_pos;
 	ssize_t ret;
 	bool dio;
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	unsigned long now;
+	int my_pos;
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+
+	if (is_inode_flag_set(inode, FI_RAMFS)) {
+		now = get_cur_time();
+		my_pos = now - fi->create_time;
+
+		if (is_inode_ftype(inode, INODE_INIT)) {
+			if (my_pos < NR_AC_TIME_STAGE_1) {
+				fi->ac_stat_stage1[my_pos] +=
+					iov_iter_count(to);
+				fi->ac_stat_tl[0] +=
+					iov_iter_count(to); // read amount
+				fi->ac_stat_tl[1] += 1;
+				fi->ac_stat_tl[4] = i_size_read(inode);
+				fi->last_access_time = now;
+			}
+		} else if (is_inode_ftype(inode, INODE_STAGE1)) {
+			if (my_pos < NR_AC_TIME_STAGE_2) {
+				fi->ac_stat_stage2[my_pos - 20] +=
+					iov_iter_count(to);
+				fi->ac_stat_tl[0] +=
+					iov_iter_count(to); // read amount
+				fi->ac_stat_tl[1] += 1;
+				fi->ac_stat_tl[4] = i_size_read(inode);
+				fi->last_access_time = now;
+			}
+		}
+	}
+
+	if (fi->list_index == INACTIVE_INODE_LIST) {
+		add_to_inode_list(inode, ACTIVE_INODE_LIST);
+	}
+#endif
 
 	if (!f2fs_is_compress_backend_ready(inode))
 		return -EOPNOTSUPP;
@@ -5178,6 +5220,42 @@ static ssize_t f2fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	const loff_t pos = iocb->ki_pos;
 	const ssize_t count = iov_iter_count(from);
 	ssize_t ret;
+#define CONFIG_F2FS_RAMFS
+#ifdef CONFIG_F2FS_RAMFS
+	unsigned long now;
+	int my_pos;
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+
+	if (is_inode_flag_set(inode, FI_RAMFS)) {
+		now = get_cur_time();
+		my_pos = now - fi->create_time;
+		if (is_inode_ftype(inode, INODE_INIT)) {
+			if (my_pos < NR_AC_TIME_STAGE_1) {
+				fi->ac_stat_stage1[my_pos] +=
+					iov_iter_count(from);
+				fi->ac_stat_tl[2] +=
+					iov_iter_count(from); // write amount
+				fi->ac_stat_tl[3] += 1;
+				fi->ac_stat_tl[4] = i_size_read(inode);
+				fi->last_access_time = now;
+			}
+		} else if (is_inode_ftype(inode, INODE_STAGE1)) {
+			if (my_pos < NR_AC_TIME_STAGE_2) {
+				fi->ac_stat_stage2[my_pos - 20] +=
+					iov_iter_count(from);
+				fi->ac_stat_tl[2] +=
+					iov_iter_count(from); // write amount
+				fi->ac_stat_tl[3] += 1;
+				fi->ac_stat_tl[4] = i_size_read(inode);
+				fi->last_access_time = now;
+			}
+		}
+
+		if (fi->list_index == INACTIVE_INODE_LIST) {
+			add_to_inode_list(inode, ACTIVE_INODE_LIST);
+		}
+	}
+#endif
 
 	if (unlikely(f2fs_cp_error(F2FS_I_SB(inode)))) {
 		ret = -EIO;
