@@ -237,12 +237,52 @@ static int is_cache_file(struct dentry *dentry)
 		fullname = dentry_path_raw(dentry, fname, pathlen);
 
 		if (fullname) {
-			printk(KERN_ALERT "[filemgr] fullname = %s\n",
+			printk(KERN_ALERT "[filemgr-is_cache_file] fullname = %s\n",
 			       fullname);
 			if (strstr(fullname,
-				   "/data/com.zhiliaoapp.musically/cache") ||
+				   "/data/com.baidu.BaiduMap/cache") ||				//百度地图
 			    strstr(fullname,
-				   "/data/com.ss.android.ugc.aweme/cache")) {
+				   "/data/com.baidu.searchbox/cache") ||			//百度
+			    strstr(fullname,
+				   "/data/com.dianping.v1/cache") ||				//大众点评
+			    strstr(fullname,
+				   "/data/com.dragon.read/cache") ||				//番茄免费小说
+			    strstr(fullname,
+				   "/data/com.duowan.kiwi/cache") ||				//斗鱼
+			    strstr(fullname,
+				   "/data/com.jingdong.app.mall/cache") ||			//京东
+			    strstr(fullname,
+				   "/data/com.kugou.android/cache") ||				//酷狗音乐
+			    strstr(fullname,
+				   "/data/com.qiyi.video/cache") ||					//爱奇艺
+			    strstr(fullname,
+				   "/data/com.sina.weibo/cache") ||					//微博
+			    strstr(fullname,
+				   "/data/com.smile.gifmaker/cache") ||				//快手
+			    strstr(fullname,
+				   "/data/com.ss.android.article.news/cache") ||	//今日头条
+			    strstr(fullname,
+				   "/data/com.ss.android.ugc.aweme/cache") ||		//抖音
+			    strstr(fullname,
+				   "/data/com.taobao.taobao/cache") ||				//淘宝
+			    strstr(fullname,
+				   "/data/com.tencent.mm/cache") ||					//微信
+			    strstr(fullname,
+				   "/data/com.tencent.mobileqq/cache") ||			//QQ
+			    strstr(fullname,
+				   "/data/com.tencent.mtt/cache") ||				//QQ浏览器
+			    strstr(fullname,
+				   "/data/com.tencent.news/cache") ||				//腾讯新闻
+			    strstr(fullname,
+				   "/data/com.tencent.qqlive/cache") ||				//腾讯视频
+			    strstr(fullname,
+				   "/data/com.UCMobile/cache") ||					//UC浏览器
+			    strstr(fullname,
+				   "/data/com.xunmeng.pinduoduo/cache") ||			//拼多多
+			    strstr(fullname,
+				   "/data/com.youku.phone/cache") ||				//优酷
+			    strstr(fullname,
+				   "/data/tv.danmaku.bili/cache")) {				
 				kfree(fname);
 				return 1;
 			}
@@ -459,9 +499,9 @@ static int f2fs_create(struct mnt_idmap *idmap, struct inode *dir,
 				F2FS_I(inode)->create_time = get_cur_time();
 				ihold(inode); // increment a reference for filemgr
 				dget(dentry); // increment a reference for filemgr
-				printk(KERN_ALERT "[filemgr] create ef2fs dir,%s\n", dentry->d_name.name);
+				printk(KERN_ALERT "[filemgr-f2fs_create] create ef2fs dir,%s\n", dentry->d_name.name);
 			} else {
-				printk(KERN_ALERT "[filemgr] can not add to init list,%s\n", dentry->d_name.name);
+				printk(KERN_ALERT "[filemgr-f2fs_create] can not add to init list,%s\n", dentry->d_name.name);
 				kfree(fi->ac_stat_stage1);
 			}
 		}

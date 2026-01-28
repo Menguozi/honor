@@ -905,7 +905,7 @@ int filemgr_unlink(struct inode *dir, struct dentry *dentry, int is_lock)
 		atomic_add_unless(&target->i_count, -1, 2);
 		clear_inode_flag(target, FI_RAMFS_DELETED);
 	}
-	printk(KERN_ALERT "[filemgr-delete] %s\n", dentry->d_name.name);
+	printk(KERN_ALERT "[filemgr-filemgr_unlink] %s\n", dentry->d_name.name);
 	error = dir->i_op->unlink(dir, dentry);
 
 	if (!error) {

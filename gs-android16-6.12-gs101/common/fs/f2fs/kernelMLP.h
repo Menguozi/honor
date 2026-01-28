@@ -84,7 +84,7 @@ static inline void print_matrix_stage1(struct matrix *mat, const char *str)
 {
 	int i;
 	for (i = 0; i < mat->rows; i++) {
-		printk(KERN_ALERT "[filemgr][%s]", str);
+		printk(KERN_ALERT "[filemgr-print_matrix_stage1][%s]", str);
 		for (int j = 0; j < mat->cols; j++) {
 			printk(KERN_ALERT ",%lld", mat->data[i][j]);
 		}
